@@ -1,43 +1,63 @@
-import { useState, useEffect } from 'react'
-import './App.css'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+import { AuthProvider, useAuth } from './hooks/useAuth';
+import Login from './components/Login';
+import FlappyBird from './components/FlappyBird';
+import './App.css';
 
-function App() {
-  const [message, setMessage] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: '#2196F3',
+    },
+    secondary: {
+      main: '#FF9800',
+    },
+    background: {
+      default: '#F5F5F5',
+    },
+  },
+});
 
-  useEffect(() => {
-    fetch('/api/hello')
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('Failed to fetch')
-        }
-        return response.json()
-      })
-      .then(data => {
-        setMessage(data.message)
-        setLoading(false)
-      })
-      .catch(err => {
-        setError(err.message)
-        setLoading(false)
-      })
-  }, [])
+function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
 
-  return (
-    <div className="app">
-      <div className="container">
-        {loading && <div className="loading">Loading...</div>}
-        {error && <div className="error">Error: {error}</div>}
-        {!loading && !error && (
-          <>
-            <h1 className="message">{message}</h1>
-            <p className="subtitle">Connected to Python backend via FastAPI</p>
-          </>
-        )}
-      </div>
-    </div>
-  )
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  return user ? children : <Navigate to="/login" replace />;
 }
 
-export default App
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route
+        path="/game"
+        element={
+          <ProtectedRoute>
+            <FlappyBird />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/" element={<Navigate to="/game" replace />} />
+    </Routes>
+  );
+}
+
+function App() {
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <AuthProvider>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}
+
+export default App;
