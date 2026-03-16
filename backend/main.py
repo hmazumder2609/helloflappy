@@ -7,7 +7,7 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 from pydantic import BaseModel, field_validator
 import aiosqlite
 
@@ -69,11 +69,6 @@ if not SECRET_KEY:
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 
-pwd_context = CryptContext(
-    schemes=["bcrypt_sha256"],
-    deprecated="auto",
-    bcrypt_sha256__rounds=12,
-)
 security = HTTPBearer()
 
 
@@ -127,12 +122,21 @@ class ScoreSubmit(BaseModel):
 
 
 # Utility functions
+import hashlib
+import base64
+
+
+def _prehash(password: str) -> bytes:
+    """SHA256 pre-hash to safely handle passwords of any length with bcrypt."""
+    return base64.b64encode(hashlib.sha256(password.encode("utf-8")).digest())
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(_prehash(plain_password), hashed_password.encode("utf-8"))
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(_prehash(password), bcrypt.gensalt(rounds=12)).decode("utf-8")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
