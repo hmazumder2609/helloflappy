@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Container,
-  Paper,
   TextField,
   Button,
   Typography,
@@ -25,6 +24,22 @@ function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (mode === 'register') {
+      if (username.length < 3 || username.length > 30) {
+        setError('Username must be 3-30 characters');
+        return;
+      }
+      if (!/^[a-zA-Z0-9]+$/.test(username)) {
+        setError('Username must be alphanumeric');
+        return;
+      }
+      if (password.length < 6) {
+        setError('Password must be at least 6 characters');
+        return;
+      }
+    }
+
     setLoading(true);
 
     const isRegister = mode === 'register';
@@ -39,7 +54,7 @@ function Login() {
   };
 
   return (
-    <Container maxWidth="sm">
+    <Container maxWidth="xs">
       <Box
         sx={{
           minHeight: '100vh',
@@ -48,20 +63,52 @@ function Login() {
           justifyContent: 'center',
         }}
       >
-        <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
-          <Typography variant="h4" component="h1" gutterBottom align="center">
-            Flappy Bird
+        <Box
+          className="glass-card glow-border"
+          sx={{ p: 5, width: '100%' }}
+        >
+          <Typography
+            variant="h3"
+            component="h1"
+            align="center"
+            sx={{
+              fontWeight: 800,
+              mb: 1,
+              background: 'linear-gradient(135deg, #00d4ff, #ff006e)',
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}
+          >
+            FlappyDash
           </Typography>
-          <Typography variant="subtitle1" gutterBottom align="center" color="text.secondary">
-            {mode === 'login' ? 'Sign in to play' : 'Create an account'}
+          <Typography
+            variant="body2"
+            align="center"
+            sx={{ color: 'rgba(255,255,255,0.5)', mb: 4 }}
+          >
+            {mode === 'login' ? 'Sign in to play' : 'Create your account'}
           </Typography>
 
-          <Box sx={{ mb: 2, display: 'flex', justifyContent: 'center' }}>
+          <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
             <ToggleButtonGroup
               value={mode}
               exclusive
               onChange={(e, newMode) => newMode && setMode(newMode)}
               aria-label="login or register"
+              sx={{
+                '& .MuiToggleButton-root': {
+                  color: 'rgba(255,255,255,0.5)',
+                  borderColor: 'rgba(255,255,255,0.12)',
+                  px: 4,
+                  fontWeight: 600,
+                  '&.Mui-selected': {
+                    color: '#00d4ff',
+                    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                    borderColor: 'rgba(0, 212, 255, 0.3)',
+                  },
+                },
+              }}
             >
               <ToggleButton value="login">Login</ToggleButton>
               <ToggleButton value="register">Register</ToggleButton>
@@ -69,7 +116,7 @@ function Login() {
           </Box>
 
           {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
+            <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
               {error}
             </Alert>
           )}
@@ -84,6 +131,13 @@ function Login() {
               onChange={(e) => setUsername(e.target.value)}
               required
               autoComplete="username"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                  '&:hover fieldset': { borderColor: 'rgba(0, 212, 255, 0.3)' },
+                  '&.Mui-focused fieldset': { borderColor: '#00d4ff' },
+                },
+              }}
             />
             <TextField
               fullWidth
@@ -95,19 +149,38 @@ function Login() {
               onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                  '&:hover fieldset': { borderColor: 'rgba(0, 212, 255, 0.3)' },
+                  '&.Mui-focused fieldset': { borderColor: '#00d4ff' },
+                },
+              }}
             />
             <Button
               type="submit"
               fullWidth
               variant="contained"
-              color="primary"
-              sx={{ mt: 3, mb: 2 }}
+              sx={{
+                mt: 4,
+                mb: 1,
+                py: 1.5,
+                fontWeight: 700,
+                fontSize: '1rem',
+                background: 'linear-gradient(135deg, #00d4ff, #ff006e)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #00bfe6, #e6005f)',
+                },
+                '&.Mui-disabled': {
+                  background: 'rgba(255,255,255,0.1)',
+                },
+              }}
               disabled={loading}
             >
               {loading ? 'Loading...' : mode === 'login' ? 'Sign In' : 'Sign Up'}
             </Button>
           </Box>
-        </Paper>
+        </Box>
       </Box>
     </Container>
   );

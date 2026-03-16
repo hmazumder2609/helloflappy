@@ -14,6 +14,12 @@ export const AuthProvider = ({ children }) => {
       setUser({ username, token });
     }
     setLoading(false);
+
+    const handleSessionExpired = () => {
+      setUser(null);
+    };
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+    return () => window.removeEventListener('auth:session-expired', handleSessionExpired);
   }, []);
 
   const login = async (username, password, isRegister = false) => {

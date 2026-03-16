@@ -4,18 +4,60 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import Login from './components/Login';
 import FlappyBird from './components/FlappyBird';
+import ErrorBoundary from './components/ErrorBoundary';
 import './App.css';
 
 const theme = createTheme({
   palette: {
+    mode: 'dark',
     primary: {
-      main: '#2196F3',
+      main: '#00d4ff',
     },
     secondary: {
-      main: '#FF9800',
+      main: '#ff006e',
     },
     background: {
-      default: '#F5F5F5',
+      default: '#0a0a1a',
+      paper: 'rgba(255, 255, 255, 0.04)',
+    },
+  },
+  typography: {
+    fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+    h1: { fontFamily: "'Orbitron', monospace" },
+    h2: { fontFamily: "'Orbitron', monospace" },
+    h3: { fontFamily: "'Orbitron', monospace" },
+    h4: { fontFamily: "'Orbitron', monospace" },
+    h5: { fontFamily: "'Orbitron', monospace" },
+    h6: { fontFamily: "'Orbitron', monospace" },
+  },
+  shape: {
+    borderRadius: 12,
+  },
+  components: {
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+          fontWeight: 600,
+          borderRadius: 10,
+        },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          backgroundImage: 'none',
+        },
+      },
+    },
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          background: 'rgba(15, 15, 35, 0.95)',
+          backdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+        },
+      },
     },
   },
 });
@@ -51,11 +93,13 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <AuthProvider>
-        <Router>
-          <AppRoutes />
-        </Router>
-      </AuthProvider>
+      <ErrorBoundary>
+        <AuthProvider>
+          <Router>
+            <AppRoutes />
+          </Router>
+        </AuthProvider>
+      </ErrorBoundary>
     </ThemeProvider>
   );
 }

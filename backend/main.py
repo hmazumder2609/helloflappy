@@ -1,45 +1,102 @@
-from datetime import datetime, timedelta
+import os
+import warnings
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel
-import bcrypt
+from pydantic import BaseModel, field_validator
+import aiosqlite
 
-app = FastAPI()
+DB_PATH = os.environ.get("DB_PATH", "flappy.db")
+
+
+async def init_db():
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                hashed_password TEXT NOT NULL
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS high_scores (
+                username TEXT PRIMARY KEY,
+                score INTEGER DEFAULT 0,
+                FOREIGN KEY (username) REFERENCES users(username)
+            )
+        """)
+        await db.commit()
+
+
+def get_db():
+    return aiosqlite.connect(DB_PATH)
+
+
+@asynccontextmanager
+async def lifespan(app):
+    await init_db()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 # CORS configuration
+CORS_ORIGINS = os.environ.get(
+    "CORS_ORIGINS", "http://localhost:5173,http://localhost:3000"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=[origin.strip() for origin in CORS_ORIGINS],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Security configuration
-SECRET_KEY = "your-secret-key-change-in-production"  # Change in production!
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    SECRET_KEY = "dev-only-insecure-key-" + os.urandom(16).hex()
+    warnings.warn(
+        "SECRET_KEY not set — using random dev key. Set SECRET_KEY env var in production.",
+        stacklevel=1,
+    )
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 
 pwd_context = CryptContext(
-    schemes=["bcrypt_sha256"],  # SHA256 first (unlimited length), then bcrypt
+    schemes=["bcrypt_sha256"],
     deprecated="auto",
-    bcrypt_sha256__rounds=12,   # Adjust rounds as needed (higher = slower)
+    bcrypt_sha256__rounds=12,
 )
 security = HTTPBearer()
-
-# In-memory storage
-users = {}  # {username: hashed_password}
-high_scores = {}  # {username: score}
 
 
 # Pydantic models
 class UserRegister(BaseModel):
     username: str
     password: str
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v):
+        if len(v) < 3 or len(v) > 30:
+            raise ValueError("Username must be 3-30 characters")
+        if not v.isalnum():
+            raise ValueError("Username must be alphanumeric")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v):
+        if len(v) < 6:
+            raise ValueError("Password must be at least 6 characters")
+        return v
 
 
 class UserLogin(BaseModel):
@@ -61,32 +118,29 @@ class ScoreResponse(BaseModel):
 class ScoreSubmit(BaseModel):
     score: int
 
+    @field_validator("score")
+    @classmethod
+    def validate_score(cls, v):
+        if v < 0 or v > 9999:
+            raise ValueError("Invalid score")
+        return v
+
 
 # Utility functions
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password against bcrypt hash"""
-    return bcrypt.checkpw(
-        plain_password.encode('utf-8'), 
-        hashed_password.encode('utf-8')
-    )
+    return pwd_context.verify(plain_password, hashed_password)
+
 
 def get_password_hash(password: str) -> str:
-    """Hash password with bcrypt (unlimited length via UTF-8 encoding)"""
-    if len(password.encode('utf-8')) > 72:
-        # bcrypt handles >72 bytes fine when properly encoded
-        pass  # No truncation needed
-    return bcrypt.hashpw(
-        password.encode('utf-8'), 
-        bcrypt.gensalt(rounds=12)
-    ).decode('utf-8')
+    return pwd_context.hash(password)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+        expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -112,15 +166,26 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 # Authentication endpoints
 @app.post("/api/register", response_model=Token)
 async def register(user_data: UserRegister):
-    if user_data.username in users:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered"
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT username FROM users WHERE username = ?", (user_data.username,)
         )
-    hashed_password = get_password_hash(user_data.password)
-    users[user_data.username] = hashed_password
-    high_scores[user_data.username] = 0
-    
+        if await cursor.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already registered",
+            )
+        hashed_password = get_password_hash(user_data.password)
+        await db.execute(
+            "INSERT INTO users (username, hashed_password) VALUES (?, ?)",
+            (user_data.username, hashed_password),
+        )
+        await db.execute(
+            "INSERT INTO high_scores (username, score) VALUES (?, 0)",
+            (user_data.username,),
+        )
+        await db.commit()
+
     access_token_expires = timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     access_token = create_access_token(
         data={"sub": user_data.username}, expires_delta=access_token_expires
@@ -128,23 +193,30 @@ async def register(user_data: UserRegister):
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "username": user_data.username
+        "username": user_data.username,
     }
 
 
 @app.post("/api/login", response_model=Token)
 async def login(user_data: UserLogin):
-    if user_data.username not in users:
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT hashed_password FROM users WHERE username = ?",
+            (user_data.username,),
+        )
+        row = await cursor.fetchone()
+
+    if not row:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password"
+            detail="Incorrect username or password",
         )
-    if not verify_password(user_data.password, users[user_data.username]):
+    if not verify_password(user_data.password, row[0]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password"
+            detail="Incorrect username or password",
         )
-    
+
     access_token_expires = timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     access_token = create_access_token(
         data={"sub": user_data.username}, expires_delta=access_token_expires
@@ -152,7 +224,7 @@ async def login(user_data: UserLogin):
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "username": user_data.username
+        "username": user_data.username,
     }
 
 
@@ -164,19 +236,32 @@ async def get_current_user_info(username: str = Depends(get_current_user)):
 # Score endpoints
 @app.get("/api/scores", response_model=ScoreResponse)
 async def get_score(username: str = Depends(get_current_user)):
-    score = high_scores.get(username, 0)
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT score FROM high_scores WHERE username = ?", (username,)
+        )
+        row = await cursor.fetchone()
+    score = row[0] if row else 0
     return {"username": username, "high_score": score}
 
 
 @app.post("/api/scores", response_model=ScoreResponse)
 async def submit_score(
-    score_data: ScoreSubmit,
-    username: str = Depends(get_current_user)
+    score_data: ScoreSubmit, username: str = Depends(get_current_user)
 ):
-    current_high_score = high_scores.get(username, 0)
-    if score_data.score > current_high_score:
-        high_scores[username] = score_data.score
-    return {
-        "username": username,
-        "high_score": high_scores.get(username, 0)
-    }
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT score FROM high_scores WHERE username = ?", (username,)
+        )
+        row = await cursor.fetchone()
+        current_high_score = row[0] if row else 0
+
+        if score_data.score > current_high_score:
+            await db.execute(
+                "INSERT OR REPLACE INTO high_scores (username, score) VALUES (?, ?)",
+                (username, score_data.score),
+            )
+            await db.commit()
+            current_high_score = score_data.score
+
+    return {"username": username, "high_score": current_high_score}
