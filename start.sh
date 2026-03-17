@@ -28,7 +28,7 @@ cd ..
 # Start frontend
 echo "[4/4] Starting frontend on http://localhost:5173..."
 cd frontend
-npm run dev &
+npm run dev -- --host 0.0.0.0 &
 FRONTEND_PID=$!
 cd ..
 
